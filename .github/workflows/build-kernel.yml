@@ -96,8 +96,11 @@ jobs:
       run: |
         cd $GITHUB_WORKSPACE/kernel_workspace
         mkdir clang-aosp
-        wget https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/${{ env.CLANG_BRANCH }}/clang-${{ env.CLANG_VERSION }}.tar.gz
-        tar -C clang-aosp/ -zxvf clang-${{ env.CLANG_VERSION }}.tar.gz
+        # Gitiles 只支持整仓归档，格式为 +archive/refs/heads/BRANCH.tar.gz，不支持子路径
+        wget -q --show-progress -O full-clang.tar.gz "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/${{ env.CLANG_BRANCH }}.tar.gz"
+        tar -xzf full-clang.tar.gz
+        mv "clang-${{ env.CLANG_VERSION }}"/* clang-aosp/
+        rm -rf "clang-${{ env.CLANG_VERSION }}" full-clang.tar.gz
 
     - name: Download Custom-Clang
       if: env.USE_CUSTOM_CLANG == 'true'

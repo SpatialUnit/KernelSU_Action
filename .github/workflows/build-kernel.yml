@@ -19,6 +19,8 @@ jobs:
             KERNEL_SOURCE
             KERNEL_SOURCE_BRANCH
             KERNEL_CONFIG
+            USE_FULL_CONFIG
+            FULL_CONFIG_PATH
             KERNEL_IMAGE_NAME
             ARCH
             ADD_LOCALVERSION_TO_FILENAME
@@ -213,35 +215,48 @@ jobs:
     - name: Setup Configuration for Kernel
       run: |
         cd $GITHUB_WORKSPACE/kernel_workspace/android-kernel
+        CONFIG_TARGET=arch/${{ env.ARCH }}/configs/${{ env.KERNEL_CONFIG }}
+        if [ ${{ env.USE_FULL_CONFIG }} = true ]; then
+            CONFIG_SOURCE="$GITHUB_WORKSPACE/${{ env.FULL_CONFIG_PATH }}"
+            if [ ! -f "$CONFIG_SOURCE" ]; then
+                echo "Full config not found: $CONFIG_SOURCE"
+                exit 1
+            fi
+            mkdir -p out
+            cp "$CONFIG_SOURCE" out/.config
+            CONFIG_TARGET=out/.config
+        fi
         if [ ${{ env.APPLY_KSU_PATCH }} = true ]; then
             bash $GITHUB_WORKSPACE/patches/patches.sh
-            if grep -q "CONFIG_KSU" arch/${{ env.ARCH }}/configs/${{ env.KERNEL_CONFIG }}; then
-                sed -i 's/# CONFIG_KSU is not set/CONFIG_KSU=y/g' arch/${{ env.ARCH }}/configs/${{ env.KERNEL_CONFIG }}
-                sed -i 's/CONFIG_KSU=n/CONFIG_KSU=y/g' arch/${{ env.ARCH }}/configs/${{ env.KERNEL_CONFIG }}
+            if grep -q "CONFIG_KSU" "$CONFIG_TARGET"; then
+                sed -i 's/# CONFIG_KSU is not set/CONFIG_KSU=y/g' "$CONFIG_TARGET"
+                sed -i 's/CONFIG_KSU=n/CONFIG_KSU=y/g' "$CONFIG_TARGET"
             else
-                echo "CONFIG_KSU=y" >> arch/${{ env.ARCH }}/configs/${{ env.KERNEL_CONFIG }}
+                echo "CONFIG_KSU=y" >> "$CONFIG_TARGET"
             fi
         fi
         if [ ${{ env.ADD_KPROBES_CONFIG }} = true -a ${{ env.APPLY_KSU_PATCH }} != true ]; then
-            echo "CONFIG_MODULES=y" >> arch/${{ env.ARCH }}/configs/${{ env.KERNEL_CONFIG }}
-            echo "CONFIG_KPROBES=y" >> arch/${{ env.ARCH }}/configs/${{ env.KERNEL_CONFIG }}
-            echo "CONFIG_HAVE_KPROBES=y" >> arch/${{ env.ARCH }}/configs/${{ env.KERNEL_CONFIG }}
-            echo "CONFIG_KPROBE_EVENTS=y" >> arch/${{ env.ARCH }}/configs/${{ env.KERNEL_CONFIG }}
+            echo "CONFIG_MODULES=y" >> "$CONFIG_TARGET"
+            echo "CONFIG_KPROBES=y" >> "$CONFIG_TARGET"
+            echo "CONFIG_HAVE_KPROBES=y" >> "$CONFIG_TARGET"
+            echo "CONFIG_KPROBE_EVENTS=y" >> "$CONFIG_TARGET"
         fi
         if [ ${{ env.ADD_OVERLAYFS_CONFIG }} = true ]; then
-            echo "CONFIG_OVERLAY_FS=y" >> arch/${{ env.ARCH }}/configs/${{ env.KERNEL_CONFIG }}
+            echo "CONFIG_OVERLAY_FS=y" >> "$CONFIG_TARGET"
         fi
         if [ ${{ env.DISABLE-LTO }} = true ]; then
-            sed -i 's/CONFIG_LTO=y/CONFIG_LTO=n/' arch/${{ env.ARCH }}/configs/${{ env.KERNEL_CONFIG }}
-            sed -i 's/CONFIG_LTO_CLANG=y/CONFIG_LTO_CLANG=n/' arch/${{ env.ARCH }}/configs/${{ env.KERNEL_CONFIG }}
-            sed -i 's/CONFIG_THINLTO=y/CONFIG_THINLTO=n/' arch/${{ env.ARCH }}/configs/${{ env.KERNEL_CONFIG }}
-            echo "CONFIG_LTO_NONE=y" >> arch/${{ env.ARCH }}/configs/${{ env.KERNEL_CONFIG }}
+            sed -i 's/CONFIG_LTO=y/CONFIG_LTO=n/' "$CONFIG_TARGET"
+            sed -i 's/CONFIG_LTO_CLANG=y/CONFIG_LTO_CLANG=n/' "$CONFIG_TARGET"
+            sed -i 's/CONFIG_THINLTO=y/CONFIG_THINLTO=n/' "$CONFIG_TARGET"
+            echo "CONFIG_LTO_NONE=y" >> "$CONFIG_TARGET"
         fi
         if [ ${{ env.DISABLE_CC_WERROR }} = true ]; then
-            echo "CONFIG_CC_WERROR=n" >> arch/${{ env.ARCH }}/configs/${{ env.KERNEL_CONFIG }}
+            echo "CONFIG_CC_WERROR=n" >> "$CONFIG_TARGET"
         fi
-        mkdir -p out
-        cp arch/${{ env.ARCH }}/configs/${{ env.KERNEL_CONFIG }} out/.config
+        if [ ${{ env.USE_FULL_CONFIG }} != true ]; then
+            mkdir -p out
+            cp arch/${{ env.ARCH }}/configs/${{ env.KERNEL_CONFIG }} out/.config
+        fi
         make O=out ARCH=${{ env.ARCH }} olddefconfig
 
     - name: Setup ccache
@@ -261,7 +276,9 @@ jobs:
           export KSU_EXPECTED_SIZE=${{ env.KSU_EXPECTED_SIZE }}
           export KSU_EXPECTED_HASH=${{ env.KSU_EXPECTED_HASH }}
         fi
-        make -j$(nproc --all) CC=clang O=out ARCH=${{ env.ARCH }} ${{ env.CUSTOM_CMDS }} ${{ env.EXTRA_CMDS }} ${{ env.GCC_64 }} ${{ env.GCC_32 }} ${{ env.KERNEL_CONFIG }}
+        if [ ${{ env.USE_FULL_CONFIG }} != true ]; then
+            make -j$(nproc --all) CC=clang O=out ARCH=${{ env.ARCH }} ${{ env.CUSTOM_CMDS }} ${{ env.EXTRA_CMDS }} ${{ env.GCC_64 }} ${{ env.GCC_32 }} ${{ env.KERNEL_CONFIG }}
+        fi
         if [ ${{ env.ENABLE_CCACHE }} = true ]; then
             make -j$(nproc --all) CC="ccache clang" O=out ARCH=${{ env.ARCH }} ${{ env.CUSTOM_CMDS }} ${{ env.EXTRA_CMDS }} ${{ env.GCC_64 }} ${{ env.GCC_32 }}
         else
